@@ -88,12 +88,13 @@ impl OrderbookAggregator for OrderbookAggregatorImpl {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let f = binance::Feeder::new();
+
     let feeder = binance::BinanceFeeder::new();
     feeder.clone().watch_pair("btcusdt").await;
     feeder.clone().reconcile("btcusdt").await;
 
-    println!("starting server");
-
+    println!("Starting gRPC server on port: {}", "50051");
     let addr: SocketAddr = "127.0.0.1:50051".parse().unwrap();
 
     let (_tx, _rx) = mpsc::channel::<bool>(8);
