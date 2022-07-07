@@ -2,15 +2,14 @@ mod orderbook {
     tonic::include_proto!("orderbook");
 }
 
-pub mod binance;
+pub mod feeder;
 
 use orderbook::orderbook_aggregator_client::OrderbookAggregatorClient;
-use orderbook::{Empty, Pair};
+use orderbook::Pair;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 
 async fn get_summary(client: &mut OrderbookAggregatorClient<Channel>) {
-    //let mut stream = client.book_summary(Empty {}).await.unwrap().into_inner();
     let mut stream = client
         .book_summary(Pair {
             pair: "btcusdt".to_string(),
@@ -19,12 +18,10 @@ async fn get_summary(client: &mut OrderbookAggregatorClient<Channel>) {
         .unwrap()
         .into_inner();
 
-    // stream is infinite - take just 5 elements and then disconnect
-    //let mut stream = stream.take(num);
     while let Some(item) = stream.next().await {
-        println!("\treceived: {}", item.unwrap().spread);
+        println!("{:?}", item.unwrap());
     }
-    // stream is droped here and the disconnect info is send to server
+    // stream is dropped here and the disconnect info is send to server
 }
 
 #[tokio::main]
@@ -33,8 +30,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .unwrap();
 
-    println!("Streaming echo:");
-    //streaming_echo(&mut client).await;
     get_summary(&mut client).await;
 
     Ok(())

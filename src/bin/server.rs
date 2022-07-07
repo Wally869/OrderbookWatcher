@@ -1,30 +1,28 @@
-use orderbook::{Empty, Level, Pair, Summary};
-use std::net::SocketAddr;
-
-use tokio::sync::mpsc::{self, Sender};
-
-use tokio_stream::wrappers::ReceiverStream;
-use tokio_stream::{Stream, StreamExt};
-use tonic::{transport::Server, Request, Response, Status};
-
-use std::pin::Pin;
-
-use std::time::Duration;
-
 mod orderbook {
     tonic::include_proto!("orderbook");
 }
 
-mod binance;
+mod feeder;
+
+use orderbook::{Pair, Summary};
+use std::net::SocketAddr;
+
+use tokio::sync::mpsc::{self};
+
+use tokio_stream::{wrappers::ReceiverStream, Stream};
+use tonic::{transport::Server, Request, Response, Status};
+
+use std::pin::Pin;
+
+
 
 use crate::orderbook::orderbook_aggregator_server::{
     OrderbookAggregator, OrderbookAggregatorServer,
 };
 
-
-
-#[derive(Default)]
-pub struct OrderbookAggregatorImpl {}
+pub struct OrderbookAggregatorImpl {
+    pub feeder: feeder::Feeder,
+}
 
 type ResponseStream = Pin<Box<dyn Stream<Item = Result<Summary, Status>> + Send>>;
 
@@ -38,30 +36,22 @@ impl OrderbookAggregator for OrderbookAggregatorImpl {
     ) -> Result<Response<Self::BookSummaryStream>, Status> {
         println!("Request from {:?}", request.remote_addr());
 
-        // creating infinite stream with requested message
-        let summy = Summary {
-            spread: 0.01,
-            bids: vec![Level {
-                exchange: String::from("binance"),
-                price: 0.57,
-                amount: 1.23,
-            }],
-            asks: vec![Level {
-                exchange: String::from("binance"),
-                price: 0.57,
-                amount: 1.23,
-            }],
+        let pair = request.get_ref().pair.clone();
+        let mut stream = {
+            self.feeder
+                .channels
+                .get(&pair)
+                .unwrap()
+                .lock()
+                .unwrap()
+                .subscribe()
         };
-
-        let repeat = std::iter::repeat(summy.clone());
-
-        let mut stream = Box::pin(tokio_stream::iter(repeat).throttle(Duration::from_millis(200)));
 
         // spawn and channel are required if you want handle "disconnect" functionality
         // the `out_stream` will not be polled after client disconnect
-        let (tx, rx) = mpsc::channel(8);
+        let (tx, rx) = mpsc::channel(32);
         tokio::spawn(async move {
-            while let Some(item) = stream.next().await {
+            while let Ok(item) = stream.recv().await {
                 match tx.send(Result::<_, Status>::Ok(item)).await {
                     Ok(_) => {
                         // item (server response) was queued to be send to client
@@ -72,7 +62,7 @@ impl OrderbookAggregator for OrderbookAggregatorImpl {
                     }
                 }
             }
-            println!("\tclient disconnected");
+            println!("\tclient disconnected: {:?}", request.remote_addr());
         });
 
         let output_stream = ReceiverStream::new(rx);
@@ -84,28 +74,16 @@ impl OrderbookAggregator for OrderbookAggregatorImpl {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let f = binance::Feeder::new();
-    //f.clone().watch_pair_binance("btcusdt").await;
-    f.watch_pair_bitstamp("btcusdt").await;
+    let mut f = feeder::Feeder::new();
+    f.insert_channel("btcusdt");
+    f.clone().watch_pair("btcusdt").await;
 
-
-    /*
-    let feeder = binance::BinanceFeeder::new();
-    feeder.clone().watch_pair("btcusdt").await;
-    feeder.clone().reconcile("btcusdt").await;
-
-    println!("Starting gRPC server on port: {}", "50051");
-    */
-
-    println!("STARTING SERVER");
+    println!("STARTING RPC SERVER");
     let addr: SocketAddr = "127.0.0.1:50051".parse().unwrap();
 
-    let (_tx, _rx) = mpsc::channel::<bool>(8);
-
-    let bk = OrderbookAggregatorImpl {};
-
+    let order_book = OrderbookAggregatorImpl { feeder: f };
     Server::builder()
-        .add_service(OrderbookAggregatorServer::new(bk))
+        .add_service(OrderbookAggregatorServer::new(order_book))
         .serve(addr)
         .await?;
 
