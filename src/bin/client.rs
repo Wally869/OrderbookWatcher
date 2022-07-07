@@ -4,15 +4,20 @@ mod orderbook {
 
 pub mod binance;
 
-
-
 use orderbook::orderbook_aggregator_client::OrderbookAggregatorClient;
-use orderbook::Empty;
+use orderbook::{Empty, Pair};
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 
 async fn get_summary(client: &mut OrderbookAggregatorClient<Channel>) {
-    let mut stream = client.book_summary(Empty {}).await.unwrap().into_inner();
+    //let mut stream = client.book_summary(Empty {}).await.unwrap().into_inner();
+    let mut stream = client
+        .book_summary(Pair {
+            pair: "btcusdt".to_string(),
+        })
+        .await
+        .unwrap()
+        .into_inner();
 
     // stream is infinite - take just 5 elements and then disconnect
     //let mut stream = stream.take(num);

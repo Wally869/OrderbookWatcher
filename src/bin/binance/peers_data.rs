@@ -1,0 +1,27 @@
+pub mod pairs {
+    const BITSTAMP_PAIRS: &'static [&str] = &[
+        "btcusd", "btceur", "btcgbp", "btcpax", "gbpusd", "gbpeur", "eurusd", "xrpusd", "xrpeur",
+        "xrpbtc", "xrpgbp", "xrppax", "ltcbtc", "ltcusd", "ltceur", "ltcgbp", "ethbtc", "ethusd",
+        "etheur", "ethgbp", "ethpax", "bchusd", "bcheur", "bchbtc", "bchgbp", "paxusd", "paxeur",
+        "paxgbp", "xlmbtc", "xlmusd", "xlmeur", "xlmgbp", "linkusd", "linkeur", "linkgbp",
+        "linkbtc", "linketh", "omgusd", "omgeur", "omggbp", "omgbtc", "usdcusd", "usdceur",
+        "btcusdc", "ethusdc", "eth2eth", "aaveusd", "aaveeur", "aavebtc", "batusd", "bateur",
+        "batbtc", "umausd", "umaeur", "umabtc", "daiusd", "kncusd", "knceur", "kncbtc", "mkrusd",
+        "mkreur", "mkrbtc", "zrxusd", "zrxeur", "zrxbtc", "gusdusd", "algousd", "algoeur",
+        "algobtc", "audiousd", "audioeur", "audiobtc", "crvusd", "crveur", "crvbtc", "snxusd",
+        "snxeur", "snxbtc", "uniusd", "unieur", "unibtc", "yfiusd", "yfieur", "yfibtc", "compusd",
+        "compeur", "compbtc", "grtusd", "grteur", "lrcusd", "lrceur", "usdtusd", "usdteur",
+        "usdcusdt", "btcusdt", "ethusdt", "xrpusdt", "eurteur", "eurtusd", "manausd", "manaeur",
+        "maticusd", "maticeur", "sushiusd", "sushieur", "chzusd", "chzeur", "enjusd", "enjeur",
+        "hbarusd", "hbareur", "alphausd", "alphaeur", "axsusd", "axseur", "fttusd", "ftteur",
+        "sandusd", "sandeur", "storjusd", "storjeur", "adausd", "adaeur", "adabtc", "fetusd",
+        "feteur", "sklusd", "skleur", "celusd", "celeur", "slpusd", "slpeur", "sxpusd", "sxpeur",
+        "sgbusd", "sgbeur", "avaxusd", "avaxeur", "dydxusd", "dydxeur", "ftmusd", "ftmeur",
+        "shibusd", "shibeur", "ampusd", "ampeur", "ensusd", "enseur", "galausd", "galaeur",
+        "perpusd", "perpeur", "wbtcbtc", "ctsiusd", "ctsieur", "cvxusd", "cvxeur", "imxusd",
+        "imxeur", "nexousd", "nexoeur", "antusd", "anteur", "godsusd", "godseur", "radusd",
+        "radeur", "bandusd", "bandeur", "injusd", "injeur", "rlyusd", "rlyeur", "rndrusd",
+        "rndreur", "vegausd", "vegaeur", "1inchusd", "1incheur", "apeusd", "apeeur", "mplusd",
+        "mpleur",
+    ];
+}

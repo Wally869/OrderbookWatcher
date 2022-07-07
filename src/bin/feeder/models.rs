@@ -4,30 +4,6 @@ use serde::{Deserialize, Deserializer};
 use serde_with::{serde_as, DisplayFromStr};
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct WrapperBitstampOrderbook {
-    pub data: BitstampOrderbook,
-    pub channel: String,
-    pub event: String,
-}
-
-// price - quantity for orders
-#[serde_as]
-#[derive(Debug, Deserialize, Clone)]
-pub struct BitstampOrderbook {
-    pub timestamp: String,
-    pub microtimestamp: String,
-    //#[serde(deserialize_with = "de_float_from_str")]
-    #[serde_as(as = "Vec<Vec<DisplayFromStr>>")]
-    #[serde(default)]
-    pub bids: Vec<Vec<f32>>,
-    #[serde_as(as = "Vec<Vec<DisplayFromStr>>")]
-    #[serde(default)]
-    pub asks: Vec<Vec<f32>>,
-    //pub channel: String,
-    //pub event: String,
-}
-
-#[derive(Debug, Deserialize, Clone)]
 pub struct OfferData {
     #[serde(deserialize_with = "de_float_from_str")]
     pub price: f32,
@@ -88,7 +64,7 @@ impl<'de> Deserialize<'de> for Value {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct BinanceOrderbook {
-    pub last_update_id: u64,
+    pub last_update_id: u32,
     //#[serde(deserialize_with = "de_float_from_str")]
     #[serde_as(as = "Vec<Vec<DisplayFromStr>>")]
     #[serde(default)]

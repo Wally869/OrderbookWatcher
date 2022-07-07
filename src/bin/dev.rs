@@ -1,7 +1,11 @@
 use orderbook::{Empty, Level, Pair, Summary};
+use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
 
 use tokio::sync::mpsc::{self, Sender};
+
+use tokio::sync::broadcast;
 
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::{Stream, StreamExt};
@@ -16,15 +20,23 @@ mod orderbook {
 }
 
 mod binance;
+mod feeder;
 
 use crate::orderbook::orderbook_aggregator_server::{
     OrderbookAggregator, OrderbookAggregatorServer,
 };
 
+#[derive(Clone, Copy)]
+pub enum FeederStatus {
+    Uninitialized,
+    Initializing,
+    Running,
+}
 
-
-#[derive(Default)]
-pub struct OrderbookAggregatorImpl {}
+pub struct OrderbookAggregatorImpl {
+    pub feeder_statuses: HashMap<String, Arc<Mutex<FeederStatus>>>,
+    pub streams: HashMap<String, broadcast::Sender<Summary>>,
+}
 
 type ResponseStream = Pin<Box<dyn Stream<Item = Result<Summary, Status>> + Send>>;
 
@@ -34,11 +46,14 @@ impl OrderbookAggregator for OrderbookAggregatorImpl {
 
     async fn book_summary(
         &self,
-        request: Request<Pair>, //Empty>,
+        request: Request<Pair>,
     ) -> Result<Response<Self::BookSummaryStream>, Status> {
         println!("Request from {:?}", request.remote_addr());
 
-        // creating infinite stream with requested message
+        let target_pair = request.get_ref().pair.clone();
+        let mut stream = self.streams.get(&target_pair).unwrap().subscribe();
+
+        /*        // creating infinite stream with requested message
         let summy = Summary {
             spread: 0.01,
             bids: vec![Level {
@@ -56,12 +71,13 @@ impl OrderbookAggregator for OrderbookAggregatorImpl {
         let repeat = std::iter::repeat(summy.clone());
 
         let mut stream = Box::pin(tokio_stream::iter(repeat).throttle(Duration::from_millis(200)));
+        */
 
         // spawn and channel are required if you want handle "disconnect" functionality
         // the `out_stream` will not be polled after client disconnect
         let (tx, rx) = mpsc::channel(8);
         tokio::spawn(async move {
-            while let Some(item) = stream.next().await {
+            while let Ok(item) = stream.recv().await {
                 match tx.send(Result::<_, Status>::Ok(item)).await {
                     Ok(_) => {
                         // item (server response) was queued to be send to client
@@ -85,24 +101,17 @@ impl OrderbookAggregator for OrderbookAggregatorImpl {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let f = binance::Feeder::new();
-    //f.clone().watch_pair_binance("btcusdt").await;
-    f.watch_pair_bitstamp("btcusdt").await;
-
-
-    /*
-    let feeder = binance::BinanceFeeder::new();
-    feeder.clone().watch_pair("btcusdt").await;
-    feeder.clone().reconcile("btcusdt").await;
-
-    println!("Starting gRPC server on port: {}", "50051");
-    */
+    f.watch_pair_binance("btcusdt").await;
 
     println!("STARTING SERVER");
     let addr: SocketAddr = "127.0.0.1:50051".parse().unwrap();
 
     let (_tx, _rx) = mpsc::channel::<bool>(8);
 
-    let bk = OrderbookAggregatorImpl {};
+    let bk = OrderbookAggregatorImpl {
+        feeder_statuses: HashMap::new(),
+        streams: HashMap::new(),
+    };
 
     Server::builder()
         .add_service(OrderbookAggregatorServer::new(bk))
