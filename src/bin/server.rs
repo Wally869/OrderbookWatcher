@@ -2,7 +2,8 @@ mod orderbook {
     tonic::include_proto!("orderbook");
 }
 
-mod feeder;
+//mod feeder;
+mod feeder_new;
 
 use orderbook::{Pair, Summary};
 use std::net::SocketAddr;
@@ -14,14 +15,12 @@ use tonic::{transport::Server, Request, Response, Status};
 
 use std::pin::Pin;
 
-
-
 use crate::orderbook::orderbook_aggregator_server::{
     OrderbookAggregator, OrderbookAggregatorServer,
 };
 
 pub struct OrderbookAggregatorImpl {
-    pub feeder: feeder::Feeder,
+    pub feeder: feeder_new::Feeder,
 }
 
 type ResponseStream = Pin<Box<dyn Stream<Item = Result<Summary, Status>> + Send>>;
@@ -74,7 +73,7 @@ impl OrderbookAggregator for OrderbookAggregatorImpl {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut f = feeder::Feeder::new();
+    let mut f = feeder_new::Feeder::new();
     f.insert_channel("btcusdt");
     f.clone().watch_pair("btcusdt").await;
 

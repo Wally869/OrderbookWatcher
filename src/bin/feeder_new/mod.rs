@@ -1,5 +1,5 @@
 pub mod models;
-pub mod peers_data;
+//pub mod peers_data;
 
 use itertools::Itertools;
 use serde_json::json;
@@ -17,7 +17,7 @@ use tungstenite::connect;
 use url::Url;
 
 use crate::{
-    feeder::models::{BinanceOrderbook, Marketplace},
+    feeder_new::models::{BinanceOrderbook, Marketplace},
     orderbook::{Level, Summary},
 };
 
@@ -66,24 +66,29 @@ impl Feeder {
         tokio::task::spawn(async move {
             let (tx, rx) = mpsc::channel::<WrapperOrderbook>(8);
 
-            self.clone()
+            let recv_binance = self.clone()
                 .watch_pair_binance(pair.clone(), tx.clone())
                 .await;
-            self.clone()
+            let recv_bitstamp = self.clone()
                 .watch_pair_bitstamp(pair.clone(), tx.clone())
                 .await;
-            self.reconcile(pair, rx).await;
+            self.reconcile(pair, rx, recv_binance, recv_bitstamp).await;
         });
     }
 
     /// From the channels orderbook data, compose the joint orderbook
-    pub async fn reconcile(self, pair: String, mut rx_orderbook: Receiver<WrapperOrderbook>) {
+    pub async fn reconcile(self, pair: String, mut rx_orderbook: Receiver<WrapperOrderbook>, mut receiver_binance: Receiver<WrapperOrderbook>, mut receiver_bitstamp: Receiver<WrapperOrderbook>) {
         //tokio::task::spawn(async move {
         let tx = { self.channels.get(&pair).unwrap().lock().unwrap().clone() };
 
         let mut binance_data: Option<WrapperOrderbook> = None;
         let mut bitstamp_data: Option<WrapperOrderbook> = None;
-        while let Some(msg) = rx_orderbook.recv().await {
+
+        
+        loop {
+
+        //while let Some(msg) = rx_orderbook.recv().await {
+            /*
             match msg.originator {
                 Marketplace::Binance => {
                     binance_data = Some(msg.to_owned());
@@ -92,6 +97,13 @@ impl Feeder {
                     bitstamp_data = Some(msg.to_owned());
                 }
             }
+            */
+
+            tokio::select! {
+                msg = receiver_binance.recv() => {binance_data = msg},
+                msg = receiver_bitstamp.recv() => {println!("received from bitstamp"); bitstamp_data = msg},
+            };
+
 
             if binance_data.is_some() && bitstamp_data.is_some() {
                 let binance = binance_data.clone().unwrap();
@@ -177,11 +189,13 @@ impl Feeder {
     }
 
     /// watch the given pair on bitstamp, and emit new orderbook on tx_orderbook
-    pub async fn watch_pair_bitstamp(self, pair: String, tx_orderbook: Sender<WrapperOrderbook>) {
+    pub async fn watch_pair_bitstamp(self, pair: String, tx_orderbook: Sender<WrapperOrderbook>) -> Receiver<WrapperOrderbook> {
         //let pair = pair.to_string();
         let bitstamp_url = format!("{}", BITSTAMP_WS_API); //, pair.clone());
         let (mut socket, _response) =
             connect(Url::parse(&bitstamp_url).unwrap()).expect("Can't connect.");
+
+        let (sender, receiver) = mpsc::channel::<WrapperOrderbook>(8);
 
         // Subscribe to Live Trades channel for BTC/USD
         socket
@@ -229,20 +243,26 @@ impl Feeder {
                         asks: parsed.data.asks,
                     };
 
-                    tx_orderbook.send(ob).await.unwrap();
+                    //tx_orderbook.send(ob).await.unwrap();
+                    sender.send(ob).await.unwrap();
                 }
             }
         });
+
+        return receiver;
     }
 
     /// Watch the order book for a given pair on Binance.  
     /// Binance does not push partial books like Bitstamp so we start listening to changes in the orderbook
     /// then
-    pub async fn watch_pair_binance(self, pair: String, tx_orderbook: Sender<WrapperOrderbook>) {
+    pub async fn watch_pair_binance(self, pair: String, tx_orderbook: Sender<WrapperOrderbook>) -> Receiver<WrapperOrderbook> {
         let binance_url = format!("{}/ws/{}@depth@100ms", BINANCE_WS_API, pair.clone());
         let (mut socket, _response) =
             connect(Url::parse(&binance_url).unwrap()).expect("Can't connect.");
         println!("Connected to binance stream for pair: {}", pair);
+
+        let (sender, receiver) = mpsc::channel::<WrapperOrderbook>(8);
+
 
         let (tx, mut rx) = mpsc::channel::<DepthUpdateStreamData>(16);
 
@@ -362,11 +382,14 @@ impl Feeder {
                             asks: asks,
                         };
 
-                        tx_orderbook.send(ob).await.unwrap();
+                        //tx_orderbook.send(ob).await.unwrap();
+                        sender.send(ob).await.unwrap();
                     }
                 }
             }
         });
+
+        return receiver;
         // query exchange for actual book
     }
 }

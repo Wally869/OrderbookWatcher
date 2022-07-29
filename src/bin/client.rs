@@ -3,6 +3,7 @@ mod orderbook {
 }
 
 pub mod feeder;
+pub mod feeder_new;
 
 use orderbook::orderbook_aggregator_client::OrderbookAggregatorClient;
 use orderbook::Pair;
