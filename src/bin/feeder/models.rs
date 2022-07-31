@@ -49,10 +49,10 @@ pub struct BitstampOrderbook {
     //#[serde(deserialize_with = "de_float_from_str")]
     #[serde_as(as = "Vec<Vec<DisplayFromStr>>")]
     #[serde(default)]
-    pub bids: Vec<Vec<f32>>,
+    pub bids: Vec<Vec<f64>>,
     #[serde_as(as = "Vec<Vec<DisplayFromStr>>")]
     #[serde(default)]
-    pub asks: Vec<Vec<f32>>,
+    pub asks: Vec<Vec<f64>>,
     //pub channel: String,
     //pub event: String,
 }

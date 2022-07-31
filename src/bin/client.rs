@@ -3,7 +3,6 @@ mod orderbook {
 }
 
 pub mod feeder;
-pub mod feeder_new;
 
 use orderbook::orderbook_aggregator_client::OrderbookAggregatorClient;
 use orderbook::Pair;
@@ -13,7 +12,7 @@ use tonic::transport::Channel;
 async fn get_summary(client: &mut OrderbookAggregatorClient<Channel>) {
     let mut stream = client
         .book_summary(Pair {
-            pair: "btcusdt".to_string(),
+            pair: "ethbtc".to_string(),
         })
         .await
         .unwrap()

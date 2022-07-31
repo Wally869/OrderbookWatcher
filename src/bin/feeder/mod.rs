@@ -1,5 +1,5 @@
 pub mod models;
-pub mod peers_data;
+//pub mod peers_data;
 
 use itertools::Itertools;
 use serde_json::json;
@@ -64,34 +64,34 @@ impl Feeder {
         let pair = pair.to_string().to_lowercase();
 
         tokio::task::spawn(async move {
-            let (tx, rx) = mpsc::channel::<WrapperOrderbook>(8);
+            //let (tx, rx) = mpsc::channel::<WrapperOrderbook>(8);
 
-            self.clone()
-                .watch_pair_binance(pair.clone(), tx.clone())
+            let recv_binance = self.clone()
+                .watch_pair_binance(pair.clone())
                 .await;
-            self.clone()
-                .watch_pair_bitstamp(pair.clone(), tx.clone())
+            let recv_bitstamp = self.clone()
+                .watch_pair_bitstamp(pair.clone())
                 .await;
-            self.reconcile(pair, rx).await;
+            self.reconcile(pair, recv_binance, recv_bitstamp).await;
         });
     }
 
     /// From the channels orderbook data, compose the joint orderbook
-    pub async fn reconcile(self, pair: String, mut rx_orderbook: Receiver<WrapperOrderbook>) {
+    pub async fn reconcile(self, pair: String, mut receiver_binance: Receiver<WrapperOrderbook>, mut receiver_bitstamp: Receiver<WrapperOrderbook>) {
         //tokio::task::spawn(async move {
         let tx = { self.channels.get(&pair).unwrap().lock().unwrap().clone() };
 
         let mut binance_data: Option<WrapperOrderbook> = None;
         let mut bitstamp_data: Option<WrapperOrderbook> = None;
-        while let Some(msg) = rx_orderbook.recv().await {
-            match msg.originator {
-                Marketplace::Binance => {
-                    binance_data = Some(msg.to_owned());
-                }
-                Marketplace::Bitstamp => {
-                    bitstamp_data = Some(msg.to_owned());
-                }
-            }
+
+        //binance_data = Some(WrapperOrderbook{originator: Marketplace::Binance, bids: vec![], asks: vec![]});
+        
+        loop {
+
+            tokio::select! {
+                msg = receiver_binance.recv() => { /*println!("received from binance"); */ binance_data = msg },
+                msg = receiver_bitstamp.recv() => { /*println!("received from bitstamp"); */  bitstamp_data = msg },
+            };
 
             if binance_data.is_some() && bitstamp_data.is_some() {
                 let binance = binance_data.clone().unwrap();
@@ -114,9 +114,8 @@ impl Feeder {
                     });
                 }
 
-                bids = bids
-                    .into_iter()
-                    .sorted_by(|a, b| {
+                bids
+                    .sort_by(|a, b| {
                         if a.price < b.price {
                             Ordering::Less
                         } else if a.price == b.price {
@@ -124,10 +123,8 @@ impl Feeder {
                         } else {
                             Ordering::Greater
                         }
-                    })
-                    .rev()
-                    .take(10)
-                    .collect();
+                    });
+                bids = bids.into_iter().rev().take(20).collect();
 
                 // now asks
                 let mut asks: Vec<Level> = vec![];
@@ -147,9 +144,8 @@ impl Feeder {
                     });
                 }
 
-                asks = asks
-                    .into_iter()
-                    .sorted_by(|a, b| {
+                asks
+                    .sort_by(|a, b| {
                         if a.price < b.price {
                             Ordering::Less
                         } else if a.price == b.price {
@@ -157,16 +153,17 @@ impl Feeder {
                         } else {
                             Ordering::Greater
                         }
-                    })
-                    .take(10)
+                    });
                     //.rev()
-                    .collect();
+                asks = asks.into_iter().take(20).collect();
+
 
                 let summary = Summary {
                     spread: asks[0].price - bids[0].price,
                     bids: bids,
                     asks: asks,
                 };
+
 
                 if tx.receiver_count() > 0 {
                     tx.send(summary).unwrap();
@@ -177,11 +174,13 @@ impl Feeder {
     }
 
     /// watch the given pair on bitstamp, and emit new orderbook on tx_orderbook
-    pub async fn watch_pair_bitstamp(self, pair: String, tx_orderbook: Sender<WrapperOrderbook>) {
+    pub async fn watch_pair_bitstamp(self, pair: String) -> Receiver<WrapperOrderbook> {
         //let pair = pair.to_string();
         let bitstamp_url = format!("{}", BITSTAMP_WS_API); //, pair.clone());
         let (mut socket, _response) =
             connect(Url::parse(&bitstamp_url).unwrap()).expect("Can't connect.");
+
+        let (sender, receiver) = mpsc::channel::<WrapperOrderbook>(1);
 
         // Subscribe to Live Trades channel for BTC/USD
         socket
@@ -214,7 +213,7 @@ impl Feeder {
                         None
                     },
                     _ => {
-                        panic!("Error getting text from bitsta");
+                        panic!("Error getting text from bitstamp");
                     }
                 };
 
@@ -225,56 +224,61 @@ impl Feeder {
 
                     let ob = WrapperOrderbook {
                         originator: models::Marketplace::Bitstamp,
-                        bids: parsed.data.bids,
-                        asks: parsed.data.asks,
+                        bids: parsed.data.bids.into_iter().map(|elem| elem.into_iter().map(|elem| elem as f32).collect()).collect(),
+                        asks: parsed.data.asks.into_iter().map(|elem| elem.into_iter().map(|elem| elem as f32).collect()).collect(),
                     };
-
-                    tx_orderbook.send(ob).await.unwrap();
+                    
+                    sender.send(ob).await.unwrap();
                 }
             }
         });
+
+        return receiver;
     }
 
     /// Watch the order book for a given pair on Binance.  
     /// Binance does not push partial books like Bitstamp so we start listening to changes in the orderbook
     /// then
-    pub async fn watch_pair_binance(self, pair: String, tx_orderbook: Sender<WrapperOrderbook>) {
+    pub async fn watch_pair_binance(self, pair: String) -> Receiver<WrapperOrderbook> {
         let binance_url = format!("{}/ws/{}@depth@100ms", BINANCE_WS_API, pair.clone());
         let (mut socket, _response) =
             connect(Url::parse(&binance_url).unwrap()).expect("Can't connect.");
         println!("Connected to binance stream for pair: {}", pair);
 
-        let (tx, mut rx) = mpsc::channel::<DepthUpdateStreamData>(16);
+        let (sender, receiver) = mpsc::channel::<WrapperOrderbook>(1);
+
+
+        let (tx, mut rx) = mpsc::channel::<DepthUpdateStreamData>(1);
 
         tokio::spawn(async move {
-            tokio::spawn(async move {
-                loop {
-                    let msg = socket.read_message().expect("Error reading message");
-                    let msg = match msg {
-                        tungstenite::Message::Text(s) => Some(s),
-                        tungstenite::Message::Ping(payload) => {
-                            socket.write_message(tungstenite::Message::Pong(payload)).unwrap();
-                            println!("binance: received ping, sent pong");
-                            None
-                        },
-                        _ => {
-                            panic!("Error getting text from binance ws");
-                        }
-                    };
-
-                    if let Some(msg) = msg {
-                        let parsed: models::DepthUpdateStreamData =
-                        serde_json::from_str(&msg).expect("Can't parse");
-
-                        if let Err(_) = tx.send(parsed).await {
-                            println!("receiver dropped");
-                            return;
-                        }
+            loop {
+                let msg = socket.read_message().expect("Error reading message");
+                let msg = match msg {
+                    tungstenite::Message::Text(s) => Some(s),
+                    tungstenite::Message::Ping(payload) => {
+                        socket.write_message(tungstenite::Message::Pong(payload)).unwrap();
+                        println!("binance: received ping, sent pong");
+                        None
+                    },
+                    _ => {
+                        panic!("Error getting text from binance ws");
                     }
+                };
 
+                if let Some(msg) = msg {
+                    let parsed: models::DepthUpdateStreamData =
+                    serde_json::from_str(&msg).expect("Can't parse");
+
+                    if let Err(_) = tx.send(parsed).await {
+                        println!("receiver dropped");
+                        return;
+                    }
                 }
-            });
 
+            }
+        });
+
+        tokio::spawn(async move {
             // get initial state book
             let target_url = format!(
                 "https://api.binance.com/api/v3/depth?symbol={}&limit=100",
@@ -362,11 +366,14 @@ impl Feeder {
                             asks: asks,
                         };
 
-                        tx_orderbook.send(ob).await.unwrap();
+                        //tx_orderbook.send(ob).await.unwrap();
+                        sender.send(ob).await.unwrap();
                     }
                 }
             }
         });
+
+        return receiver;
         // query exchange for actual book
     }
 }

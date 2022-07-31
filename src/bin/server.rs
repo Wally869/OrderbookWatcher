@@ -3,7 +3,7 @@ mod orderbook {
 }
 
 //mod feeder;
-mod feeder_new;
+mod feeder;
 
 use orderbook::{Pair, Summary};
 use std::net::SocketAddr;
@@ -20,7 +20,7 @@ use crate::orderbook::orderbook_aggregator_server::{
 };
 
 pub struct OrderbookAggregatorImpl {
-    pub feeder: feeder_new::Feeder,
+    pub feeder: feeder::Feeder,
 }
 
 type ResponseStream = Pin<Box<dyn Stream<Item = Result<Summary, Status>> + Send>>;
@@ -73,12 +73,13 @@ impl OrderbookAggregator for OrderbookAggregatorImpl {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut f = feeder_new::Feeder::new();
-    f.insert_channel("btcusdt");
-    f.clone().watch_pair("btcusdt").await;
+    let mut f = feeder::Feeder::new();
+    f.insert_channel("ethbtc");
+    f.clone().watch_pair("ethbtc").await;
 
-    println!("STARTING RPC SERVER");
     let addr: SocketAddr = "127.0.0.1:50051".parse().unwrap();
+    println!("STARTING RPC SERVER at {}", addr);
+
 
     let order_book = OrderbookAggregatorImpl { feeder: f };
     Server::builder()
