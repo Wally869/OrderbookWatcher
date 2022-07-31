@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
 use tokio::sync::{
     broadcast::Sender as broadcast_sender,
-    mpsc::{self, Receiver, Sender},
+    mpsc::{self, Receiver},
 };
 
 use std::cmp::Ordering;
@@ -17,7 +17,7 @@ use tungstenite::connect;
 use url::Url;
 
 use crate::{
-    feeder::models::{BinanceOrderbook, Marketplace},
+    feeder::models::BinanceOrderbook,
     orderbook::{Level, Summary},
 };
 
@@ -66,18 +66,19 @@ impl Feeder {
         tokio::task::spawn(async move {
             //let (tx, rx) = mpsc::channel::<WrapperOrderbook>(8);
 
-            let recv_binance = self.clone()
-                .watch_pair_binance(pair.clone())
-                .await;
-            let recv_bitstamp = self.clone()
-                .watch_pair_bitstamp(pair.clone())
-                .await;
+            let recv_binance = self.clone().watch_pair_binance(pair.clone()).await;
+            let recv_bitstamp = self.clone().watch_pair_bitstamp(pair.clone()).await;
             self.reconcile(pair, recv_binance, recv_bitstamp).await;
         });
     }
 
     /// From the channels orderbook data, compose the joint orderbook
-    pub async fn reconcile(self, pair: String, mut receiver_binance: Receiver<WrapperOrderbook>, mut receiver_bitstamp: Receiver<WrapperOrderbook>) {
+    pub async fn reconcile(
+        self,
+        pair: String,
+        mut receiver_binance: Receiver<WrapperOrderbook>,
+        mut receiver_bitstamp: Receiver<WrapperOrderbook>,
+    ) {
         //tokio::task::spawn(async move {
         let tx = { self.channels.get(&pair).unwrap().lock().unwrap().clone() };
 
@@ -85,9 +86,8 @@ impl Feeder {
         let mut bitstamp_data: Option<WrapperOrderbook> = None;
 
         //binance_data = Some(WrapperOrderbook{originator: Marketplace::Binance, bids: vec![], asks: vec![]});
-        
-        loop {
 
+        loop {
             tokio::select! {
                 msg = receiver_binance.recv() => { /*println!("received from binance"); */ binance_data = msg },
                 msg = receiver_bitstamp.recv() => { /*println!("received from bitstamp"); */  bitstamp_data = msg },
@@ -114,16 +114,15 @@ impl Feeder {
                     });
                 }
 
-                bids
-                    .sort_by(|a, b| {
-                        if a.price < b.price {
-                            Ordering::Less
-                        } else if a.price == b.price {
-                            Ordering::Equal
-                        } else {
-                            Ordering::Greater
-                        }
-                    });
+                bids.sort_by(|a, b| {
+                    if a.price < b.price {
+                        Ordering::Less
+                    } else if a.price == b.price {
+                        Ordering::Equal
+                    } else {
+                        Ordering::Greater
+                    }
+                });
                 bids = bids.into_iter().rev().take(20).collect();
 
                 // now asks
@@ -144,26 +143,23 @@ impl Feeder {
                     });
                 }
 
-                asks
-                    .sort_by(|a, b| {
-                        if a.price < b.price {
-                            Ordering::Less
-                        } else if a.price == b.price {
-                            Ordering::Equal
-                        } else {
-                            Ordering::Greater
-                        }
-                    });
-                    //.rev()
+                asks.sort_by(|a, b| {
+                    if a.price < b.price {
+                        Ordering::Less
+                    } else if a.price == b.price {
+                        Ordering::Equal
+                    } else {
+                        Ordering::Greater
+                    }
+                });
+                //.rev()
                 asks = asks.into_iter().take(20).collect();
-
 
                 let summary = Summary {
                     spread: asks[0].price - bids[0].price,
                     bids: bids,
                     asks: asks,
                 };
-
 
                 if tx.receiver_count() > 0 {
                     tx.send(summary).unwrap();
@@ -208,10 +204,12 @@ impl Feeder {
                 let msg = match msg {
                     tungstenite::Message::Text(s) => Some(s),
                     tungstenite::Message::Ping(payload) => {
-                        socket.write_message(tungstenite::Message::Pong(payload)).unwrap();
+                        socket
+                            .write_message(tungstenite::Message::Pong(payload))
+                            .unwrap();
                         println!("bitstamp: received ping, sent pong");
                         None
-                    },
+                    }
                     _ => {
                         panic!("Error getting text from bitstamp");
                     }
@@ -224,10 +222,20 @@ impl Feeder {
 
                     let ob = WrapperOrderbook {
                         originator: models::Marketplace::Bitstamp,
-                        bids: parsed.data.bids.into_iter().map(|elem| elem.into_iter().map(|elem| elem as f32).collect()).collect(),
-                        asks: parsed.data.asks.into_iter().map(|elem| elem.into_iter().map(|elem| elem as f32).collect()).collect(),
+                        bids: parsed
+                            .data
+                            .bids
+                            .into_iter()
+                            .map(|elem| elem.into_iter().map(|elem| elem as f32).collect())
+                            .collect(),
+                        asks: parsed
+                            .data
+                            .asks
+                            .into_iter()
+                            .map(|elem| elem.into_iter().map(|elem| elem as f32).collect())
+                            .collect(),
                     };
-                    
+
                     sender.send(ob).await.unwrap();
                 }
             }
@@ -247,7 +255,6 @@ impl Feeder {
 
         let (sender, receiver) = mpsc::channel::<WrapperOrderbook>(1);
 
-
         let (tx, mut rx) = mpsc::channel::<DepthUpdateStreamData>(1);
 
         tokio::spawn(async move {
@@ -256,10 +263,12 @@ impl Feeder {
                 let msg = match msg {
                     tungstenite::Message::Text(s) => Some(s),
                     tungstenite::Message::Ping(payload) => {
-                        socket.write_message(tungstenite::Message::Pong(payload)).unwrap();
+                        socket
+                            .write_message(tungstenite::Message::Pong(payload))
+                            .unwrap();
                         println!("binance: received ping, sent pong");
                         None
-                    },
+                    }
                     _ => {
                         panic!("Error getting text from binance ws");
                     }
@@ -267,14 +276,13 @@ impl Feeder {
 
                 if let Some(msg) = msg {
                     let parsed: models::DepthUpdateStreamData =
-                    serde_json::from_str(&msg).expect("Can't parse");
+                        serde_json::from_str(&msg).expect("Can't parse");
 
                     if let Err(_) = tx.send(parsed).await {
                         println!("receiver dropped");
                         return;
                     }
                 }
-
             }
         });
 

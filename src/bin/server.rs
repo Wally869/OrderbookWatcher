@@ -80,7 +80,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr: SocketAddr = "127.0.0.1:50051".parse().unwrap();
     println!("STARTING RPC SERVER at {}", addr);
 
-
     let order_book = OrderbookAggregatorImpl { feeder: f };
     Server::builder()
         .add_service(OrderbookAggregatorServer::new(order_book))
